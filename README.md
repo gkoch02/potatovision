@@ -1,6 +1,17 @@
 # PotatoVision 🥔📷
 
+![PotatoVision](title.svg)
+
 > Filmed on a potato. By choice.
+
+<p align="center">
+  <img src="preview-found-footage.png" alt='Preview at Potato Level 90 — the "Found Footage" preset' />
+  <br/>
+  <sub><i>Potato Level 90 — the "Found Footage" preset, applied to a real photo.<br/>
+  Source photo: "LeVar Burton Photo Op GalaxyCon Raleigh 2023" by
+  <a href="https://commons.wikimedia.org/w/index.php?curid=135352231">Super Festivals</a>,
+  <a href="https://creativecommons.org/licenses/by/2.0/">CC BY 2.0</a>.</i></sub>
+</p>
 
 A tiny, dependency-free web app that turns your webcam feed into the worst
 possible video on demand. Drag the **Potato Level** slider from 0 to 100 and
@@ -59,8 +70,12 @@ Windows, and Linux:
 5. In Zoom (or Meet, Teams, Discord, etc.), pick **OBS Virtual Camera** as
    your camera.
 
-Frames still never touch a network — OBS reads the rendered canvas locally
-and exposes it as a virtual device on your machine.
+PotatoVision and OBS both stay fully local — the page renders in your
+browser and OBS reads that canvas off your machine to expose a virtual
+camera device. Once you select **OBS Virtual Camera** inside Zoom/Meet/
+Teams, though, the conferencing app transmits that video to the call like
+any other webcam feed. The "no frames leave your machine" promise covers
+PotatoVision itself, not whatever app you point at the virtual camera.
 
 ## Privacy
 
@@ -78,18 +93,22 @@ The code is plain JS in `potatovision.js` — read it.
 ## Tests
 
 There's no test runner — open `tests.html` in a browser the same way you run
-the app. It imports `potatovision.js` against stub DOM elements and runs
-~70 assertions covering the per-stage effect math, the snapshot path, and the
-camera-paused-when-tab-hidden privacy promise. Pass/fail counts at the top.
+the app. It imports `potatovision.js` against stub DOM elements and runs ~60
+assertions covering the per-stage effect math, the `index.html` DOM contract,
+the snapshot path, and the camera-paused-when-tab-hidden privacy promise.
+Pass/fail counts at the top.
 
 ## Files
 
 ```
 potatovision/
-├── index.html
-├── styles.css
-├── potatovision.js
-├── tests.html
+├── index.html               # markup
+├── styles.css               # retro-CRT theme
+├── potatovision.js          # all runtime logic
+├── tests.html               # in-browser assertion harness
+├── title.svg                # README banner
+├── preview-found-footage.png # README preview frame (real filter, level 90)
+├── CLAUDE.md                # contributor / agent guide
 └── README.md
 ```
 
