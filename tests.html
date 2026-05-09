@@ -276,11 +276,20 @@
       const origGUM  = navigator.mediaDevices && navigator.mediaDevices.getUserMedia;
       const origPlay = HTMLVideoElement.prototype.play;
       const origRAF  = window.requestAnimationFrame;
+      // Safari (unlike Chrome/Firefox) validates that video.srcObject is an
+      // actual MediaStream and throws TypeError on anything else, so we need
+      // to override the setter to accept our plain-object stub.
+      const origSrcObjectDesc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'srcObject');
       if (!navigator.mediaDevices) {
         Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: {} });
       }
       navigator.mediaDevices.getUserMedia = async () => stream;
       HTMLVideoElement.prototype.play = function () { return Promise.resolve(); };
+      Object.defineProperty(HTMLMediaElement.prototype, 'srcObject', {
+        configurable: true,
+        get() { return this._stubSrcObject ?? null; },
+        set(v) { this._stubSrcObject = v; },
+      });
       window.requestAnimationFrame = () => 0;  // swallow render() scheduling
 
       document.getElementById('start').click();
@@ -290,6 +299,11 @@
       return () => {
         window.requestAnimationFrame = origRAF;
         HTMLVideoElement.prototype.play = origPlay;
+        if (origSrcObjectDesc) {
+          Object.defineProperty(HTMLMediaElement.prototype, 'srcObject', origSrcObjectDesc);
+        } else {
+          delete HTMLMediaElement.prototype.srcObject;
+        }
         if (origGUM) navigator.mediaDevices.getUserMedia = origGUM;
       };
     }
