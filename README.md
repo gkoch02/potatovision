@@ -4,7 +4,9 @@
 
 > Filmed on a potato. By choice.
 
-![Preview at Potato Level 65 — the "Skype 2008" preset](preview-skype-2008.svg)
+<p align="center">
+  <img src="preview-skype-2008.svg" alt='Preview at Potato Level 65 — the "Skype 2008" preset' />
+</p>
 
 A tiny, dependency-free web app that turns your webcam feed into the worst
 possible video on demand. Drag the **Potato Level** slider from 0 to 100 and
