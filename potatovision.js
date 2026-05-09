@@ -2,25 +2,34 @@
 
 const $ = (id) => document.getElementById(id);
 
-const video      = $('video');
-const canvas     = $('canvas');
-const emojiEl    = $('emoji');
-const statusEl   = $('status');
-const startBtn   = $('start');
-const snapBtn    = $('snap');
-const levelInput = $('level');
-const levelOut   = $('levelOut');
+const video       = $('video');
+const canvas      = $('canvas');
+const emojiCanvas = $('emojiCanvas');
+const statusEl    = $('status');
+const startBtn    = $('start');
+const snapBtn     = $('snap');
+const levelInput  = $('level');
+const levelOut    = $('levelOut');
 const emojiToggle = $('emojiMode');
-const presetBtns = document.querySelectorAll('[data-preset]');
+const presetBtns  = document.querySelectorAll('[data-preset]');
 
 const W = 480;
 const H = 360;
 canvas.width = W;
 canvas.height = H;
+emojiCanvas.width = W;
+emojiCanvas.height = H;
 
-const ctx = canvas.getContext('2d', { willReadFrequently: true });
-const tmp = document.createElement('canvas');
-const tctx = tmp.getContext('2d', { willReadFrequently: true });
+const ctx       = canvas.getContext('2d', { willReadFrequently: true });
+const emojiCtx  = emojiCanvas.getContext('2d');
+
+// Offscreen canvas for the main effects pipeline (resized per frame).
+const effectsCanvas = document.createElement('canvas');
+const effectsCtx    = effectsCanvas.getContext('2d', { willReadFrequently: true });
+
+// Offscreen canvas used purely to sample video into a luminance grid for emoji mode.
+const emojiSampleCanvas = document.createElement('canvas');
+const emojiSampleCtx    = emojiSampleCanvas.getContext('2d', { willReadFrequently: true });
 
 const scanlineCanvas = buildScanlines();
 const vignetteCanvas = buildVignette();
@@ -31,9 +40,17 @@ let level = 0;            // 0..1
 let emojiMode = false;
 let lastEmojiAt = 0;
 
+// Dark → bright. Luminance buckets pick from this list.
 const EMOJI_PALETTE = ['⬛', '🟫', '🟧', '🍟', '🥔'];
-const EMOJI_COLS = 56;
-const EMOJI_ROWS = 28;
+// 4:3 grid → square cells when rendered onto the 480×360 canvas.
+const EMOJI_COLS = 32;
+const EMOJI_ROWS = 24;
+const EMOJI_CELL_W = W / EMOJI_COLS;   // 15
+const EMOJI_CELL_H = H / EMOJI_ROWS;   // 15
+
+// Pre-rendered emoji tiles, lazily built on first emoji-mode frame so system
+// emoji fonts have a chance to load before we rasterize.
+let emojiTiles = null;
 
 // ---------- helpers ----------
 
@@ -110,43 +127,43 @@ function render(now) {
     return;
   }
 
-  // 1) Pixelate: draw video into tiny tmp canvas.
+  // 1) Pixelate: draw video into tiny offscreen canvas.
   const minW = 28;
   const targetW = Math.max(minW, Math.round(lerp(W, minW, easeIn(p))));
   const targetH = Math.max(1, Math.round(targetW * H / W));
-  tmp.width = targetW;
-  tmp.height = targetH;
-  tctx.imageSmoothingEnabled = true;
-  tctx.imageSmoothingQuality = 'low';
-  tctx.drawImage(video, 0, 0, targetW, targetH);
+  effectsCanvas.width = targetW;
+  effectsCanvas.height = targetH;
+  effectsCtx.imageSmoothingEnabled = true;
+  effectsCtx.imageSmoothingQuality = 'low';
+  effectsCtx.drawImage(video, 0, 0, targetW, targetH);
 
   // 2) Color quantization on the small canvas (cheap).
   if (p > 0.05) {
     const bits = Math.max(1, Math.round(lerp(8, 1, easeIn(p))));
     const levels = 1 << bits;
     const step = 255 / (levels - 1);
-    const img = tctx.getImageData(0, 0, targetW, targetH);
+    const img = effectsCtx.getImageData(0, 0, targetW, targetH);
     const d = img.data;
     for (let i = 0; i < d.length; i += 4) {
       d[i]     = Math.round(d[i]     / step) * step;
       d[i + 1] = Math.round(d[i + 1] / step) * step;
       d[i + 2] = Math.round(d[i + 2] / step) * step;
     }
-    tctx.putImageData(img, 0, 0);
+    effectsCtx.putImageData(img, 0, 0);
   }
 
   // 3) Scale up to display, no smoothing → blocky.
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, W, H);
-  ctx.drawImage(tmp, 0, 0, W, H);
+  ctx.drawImage(effectsCanvas, 0, 0, W, H);
 
-  // 4) Chromatic ghosting (poor man's RGB shift).
+  // 4) Chromatic ghosting (poor man's RGB shift). Two offset copies blended in.
   if (p > 0.25) {
     const offset = Math.round(lerp(0, 9, p));
     ctx.globalCompositeOperation = 'screen';
     ctx.globalAlpha = lerp(0, 0.45, p);
-    ctx.drawImage(tmp, -offset, 0, W, H);
-    ctx.drawImage(tmp,  offset, 1, W, H);
+    ctx.drawImage(effectsCanvas, -offset, 0, W, H);
+    ctx.drawImage(effectsCanvas,  offset, 0, W, H);
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
   }
@@ -177,33 +194,81 @@ function render(now) {
   requestAnimationFrame(render);
 }
 
+function buildEmojiTiles() {
+  // Render each palette emoji once into a square tile we can blit per cell.
+  // 2× oversample to keep glyphs readable when the emojiCanvas is later
+  // CSS-scaled up to the viewport.
+  const scale = 2;
+  const tileW = Math.ceil(EMOJI_CELL_W * scale);
+  const tileH = Math.ceil(EMOJI_CELL_H * scale);
+  return EMOJI_PALETTE.map((emoji) => {
+    const c = document.createElement('canvas');
+    c.width = tileW;
+    c.height = tileH;
+    const cx = c.getContext('2d');
+    cx.fillStyle = '#0a0e0a';
+    cx.fillRect(0, 0, tileW, tileH);
+    cx.font = `${Math.floor(tileH * 0.92)}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
+    cx.textAlign = 'center';
+    cx.textBaseline = 'middle';
+    cx.fillText(emoji, tileW / 2, tileH / 2 + 1);
+    return c;
+  });
+}
+
 function renderEmoji(now) {
-  // Throttle emoji rendering — DOM text updates are expensive.
   if (now - lastEmojiAt < 90) return;
   lastEmojiAt = now;
 
-  tmp.width = EMOJI_COLS;
-  tmp.height = EMOJI_ROWS;
-  tctx.imageSmoothingEnabled = true;
-  tctx.drawImage(video, 0, 0, EMOJI_COLS, EMOJI_ROWS);
-  const data = tctx.getImageData(0, 0, EMOJI_COLS, EMOJI_ROWS).data;
+  if (!emojiTiles) emojiTiles = buildEmojiTiles();
 
-  const out = [];
+  emojiSampleCanvas.width = EMOJI_COLS;
+  emojiSampleCanvas.height = EMOJI_ROWS;
+  emojiSampleCtx.imageSmoothingEnabled = true;
+  emojiSampleCtx.drawImage(video, 0, 0, EMOJI_COLS, EMOJI_ROWS);
+  const data = emojiSampleCtx.getImageData(0, 0, EMOJI_COLS, EMOJI_ROWS).data;
+
+  emojiCtx.fillStyle = '#0a0e0a';
+  emojiCtx.fillRect(0, 0, W, H);
+
   const n = EMOJI_PALETTE.length;
   for (let y = 0; y < EMOJI_ROWS; y++) {
-    let line = '';
     for (let x = 0; x < EMOJI_COLS; x++) {
       const i = (y * EMOJI_COLS + x) * 4;
       const lum = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114) / 255;
       const idx = clamp(Math.floor(lum * n), 0, n - 1);
-      line += EMOJI_PALETTE[idx];
+      emojiCtx.drawImage(
+        emojiTiles[idx],
+        Math.round(x * EMOJI_CELL_W),
+        Math.round(y * EMOJI_CELL_H),
+        EMOJI_CELL_W,
+        EMOJI_CELL_H,
+      );
     }
-    out.push(line);
   }
-  emojiEl.textContent = out.join('\n');
 }
 
 // ---------- snapshot ----------
+
+function downloadCanvas(c) {
+  c.toBlob((blob) => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `potatovision-${Date.now()}.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }, 'image/png');
+}
+
+function stampCanvas(ox) {
+  const stamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
+  ox.font = 'bold 16px monospace';
+  ox.fillStyle = 'rgba(255, 80, 80, 0.95)';
+  ox.fillText(stamp, 10, H - 16);
+  ox.fillText('● REC', 10, 22);
+}
 
 function snap() {
   const out = document.createElement('canvas');
@@ -211,47 +276,25 @@ function snap() {
   out.height = H;
   const ox = out.getContext('2d');
 
-  if (emojiMode) {
-    // Render the emoji grid to a canvas — paint background and text.
-    ox.fillStyle = '#0a0e0a';
-    ox.fillRect(0, 0, W, H);
-    ox.fillStyle = '#9aff9a';
-    ox.font = `${Math.floor(H / EMOJI_ROWS)}px monospace`;
-    ox.textBaseline = 'top';
-    const lineH = H / EMOJI_ROWS;
-    const text = emojiEl.textContent.split('\n');
-    for (let i = 0; i < text.length; i++) {
-      ox.fillText(text[i], 0, i * lineH);
-    }
-  } else {
-    ox.drawImage(canvas, 0, 0);
+  ox.drawImage(emojiMode ? emojiCanvas : canvas, 0, 0);
+
+  // At very low potato levels, skip the JPEG round-trip — Pristine should be pristine.
+  if (level < 0.05) {
+    stampCanvas(ox);
+    downloadCanvas(out);
+    return;
   }
 
-  // Push it through the worst JPEG of its life, then re-decode for download.
-  const q = clamp(lerp(0.5, 0.03, easeIn(level)), 0.03, 0.7);
+  // Otherwise push it through a punishing JPEG pass, then re-decode and stamp.
+  const q = clamp(lerp(0.92, 0.03, easeIn(level)), 0.03, 0.92);
   const url = out.toDataURL('image/jpeg', q);
 
   const img = new Image();
   img.onload = () => {
     ox.clearRect(0, 0, W, H);
     ox.drawImage(img, 0, 0);
-    // Date stamp, camcorder style.
-    const stamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
-    ox.font = 'bold 16px monospace';
-    ox.fillStyle = 'rgba(255, 80, 80, 0.95)';
-    ox.fillText(stamp, 10, H - 16);
-    ox.fillStyle = 'rgba(255, 80, 80, 0.95)';
-    ox.fillText('● REC', 10, 22);
-
-    out.toBlob((blob) => {
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `potatovision-${Date.now()}.png`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-    }, 'image/png');
+    stampCanvas(ox);
+    downloadCanvas(out);
   };
   img.src = url;
 }
@@ -267,7 +310,7 @@ function setLevel(v) {
 function toggleEmojiMode(on) {
   emojiMode = on;
   canvas.hidden = on;
-  emojiEl.hidden = !on;
+  emojiCanvas.hidden = !on;
 }
 
 startBtn.addEventListener('click', startCamera);

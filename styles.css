@@ -89,25 +89,12 @@ main {
   aspect-ratio: 4 / 3;
 }
 
-#canvas, .emoji {
+#canvas, #emojiCanvas {
   display: block;
   width: 100%;
   height: 100%;
-}
-
-.emoji {
-  margin: 0;
-  padding: 0;
-  background: #050805;
-  color: #cfeacf;
-  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", monospace;
-  font-size: 12px;
-  line-height: 1;
-  letter-spacing: 0;
-  white-space: pre;
-  overflow: hidden;
-  display: grid;
-  place-items: center;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
 }
 
 .status {
