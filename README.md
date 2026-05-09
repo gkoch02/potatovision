@@ -84,18 +84,21 @@ The code is plain JS in `potatovision.js` — read it.
 ## Tests
 
 There's no test runner — open `tests.html` in a browser the same way you run
-the app. It imports `potatovision.js` against stub DOM elements and runs
-~70 assertions covering the per-stage effect math, the snapshot path, and the
-camera-paused-when-tab-hidden privacy promise. Pass/fail counts at the top.
+the app. It imports `potatovision.js` against stub DOM elements and runs ~60
+assertions covering the per-stage effect math, the `index.html` DOM contract,
+the snapshot path, and the camera-paused-when-tab-hidden privacy promise.
+Pass/fail counts at the top.
 
 ## Files
 
 ```
 potatovision/
-├── index.html
-├── styles.css
-├── potatovision.js
-├── tests.html
+├── index.html        # markup
+├── styles.css        # retro-CRT theme
+├── potatovision.js   # all runtime logic
+├── tests.html        # in-browser assertion harness
+├── title.svg         # README banner
+├── CLAUDE.md         # contributor / agent guide
 └── README.md
 ```
 
