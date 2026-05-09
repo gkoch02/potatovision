@@ -56,6 +56,9 @@
     <p>No frames leave your machine. Promise. <a href="https://github.com/gkoch02/potatovision">source</a></p>
   </footer>
 
-  <script type="module" src="potatovision.js"></script>
+  <!-- Loaded as a classic script (with defer) rather than a module so it runs
+       even when index.html is opened directly via file:// — Safari refuses to
+       load ES modules from file:// origins. -->
+  <script defer src="potatovision.js"></script>
 </body>
 </html>

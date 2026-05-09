@@ -67,7 +67,12 @@ the point is that `render()` and the tests use the same code.
 Three files do all the runtime work:
 
 - `index.html` — markup, two visible canvases inside a `.viewport`, the
-  slider/buttons. `potatovision.js` is loaded as `<script type="module">`.
+  slider/buttons. `potatovision.js` is loaded as a classic deferred script
+  (not a module) so the page works when opened directly over `file://` —
+  Safari refuses to load ES modules from `file://` origins, which is why
+  `tests.html` (which imports the file as a module) only works over
+  `http://localhost`. Don't add `import`/`export` to `potatovision.js`
+  without also fixing the loading strategy.
 - `styles.css` — retro-CRT theme. Two load-bearing rules:
   - `image-rendering: pixelated` on `#canvas, #emojiCanvas` preserves the
     chunky look when the 480×360 internal canvas is CSS-scaled up.

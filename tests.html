@@ -27,6 +27,18 @@
   <div id="summary">running…</div>
   <pre id="out"></pre>
 
+  <!-- Safety net: if the test script never replaces the summary text,
+       something hung silently (rare now that we load classically). -->
+  <script>
+    setTimeout(() => {
+      const s = document.getElementById('summary');
+      if (s && s.textContent === 'running…') {
+        s.textContent = 'Tests did not complete — check the browser console for errors.';
+        s.className = 'fail';
+      }
+    }, 3000);
+  </script>
+
   <!-- DOM stubs so potatovision.js can wire up against the same IDs as production. -->
   <div id="stubs" aria-hidden="true">
     <video id="video" muted playsinline></video>
@@ -42,9 +54,12 @@
     <button data-preset="100"></button>
   </div>
 
-  <script type="module">
-    import './potatovision.js';
-
+  <!-- Loaded as classic scripts (not modules) so the test page works when
+       opened directly over file:// — Safari refuses ES module loads from
+       file:// origins, which would leave the page stuck at "running…". -->
+  <script src="potatovision.js"></script>
+  <script>
+  (async () => {
     const out = document.getElementById('out');
     const summary = document.getElementById('summary');
     let passed = 0;
@@ -261,11 +276,20 @@
       const origGUM  = navigator.mediaDevices && navigator.mediaDevices.getUserMedia;
       const origPlay = HTMLVideoElement.prototype.play;
       const origRAF  = window.requestAnimationFrame;
+      // Safari (unlike Chrome/Firefox) validates that video.srcObject is an
+      // actual MediaStream and throws TypeError on anything else, so we need
+      // to override the setter to accept our plain-object stub.
+      const origSrcObjectDesc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'srcObject');
       if (!navigator.mediaDevices) {
         Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: {} });
       }
       navigator.mediaDevices.getUserMedia = async () => stream;
       HTMLVideoElement.prototype.play = function () { return Promise.resolve(); };
+      Object.defineProperty(HTMLMediaElement.prototype, 'srcObject', {
+        configurable: true,
+        get() { return this._stubSrcObject ?? null; },
+        set(v) { this._stubSrcObject = v; },
+      });
       window.requestAnimationFrame = () => 0;  // swallow render() scheduling
 
       document.getElementById('start').click();
@@ -275,6 +299,11 @@
       return () => {
         window.requestAnimationFrame = origRAF;
         HTMLVideoElement.prototype.play = origPlay;
+        if (origSrcObjectDesc) {
+          Object.defineProperty(HTMLMediaElement.prototype, 'srcObject', origSrcObjectDesc);
+        } else {
+          delete HTMLMediaElement.prototype.srcObject;
+        }
         if (origGUM) navigator.mediaDevices.getUserMedia = origGUM;
       };
     }
@@ -410,6 +439,7 @@
       ? `✓ ${passed}/${total} passed`
       : `✗ ${failed} failed, ${passed}/${total} passed`;
     summary.className = failed === 0 ? '' : 'fail';
+  })();
   </script>
 </body>
 </html>
