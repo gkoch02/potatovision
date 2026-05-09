@@ -89,7 +89,7 @@ main {
   aspect-ratio: 4 / 3;
 }
 
-#canvas, #emojiCanvas {
+#canvas:not([hidden]), #emojiCanvas:not([hidden]) {
   display: block;
   width: 100%;
   height: 100%;
