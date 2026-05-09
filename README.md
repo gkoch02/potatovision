@@ -4,6 +4,8 @@
 
 > Filmed on a potato. By choice.
 
+![Preview at Potato Level 65 — the "Skype 2008" preset](preview-skype-2008.svg)
+
 A tiny, dependency-free web app that turns your webcam feed into the worst
 possible video on demand. Drag the **Potato Level** slider from 0 to 100 and
 watch your beautiful HD self disintegrate into pixelated, color-quantized,
@@ -93,12 +95,13 @@ Pass/fail counts at the top.
 
 ```
 potatovision/
-├── index.html        # markup
-├── styles.css        # retro-CRT theme
-├── potatovision.js   # all runtime logic
-├── tests.html        # in-browser assertion harness
-├── title.svg         # README banner
-├── CLAUDE.md         # contributor / agent guide
+├── index.html               # markup
+├── styles.css               # retro-CRT theme
+├── potatovision.js          # all runtime logic
+├── tests.html               # in-browser assertion harness
+├── title.svg                # README banner
+├── preview-skype-2008.svg   # README preview frame
+├── CLAUDE.md                # contributor / agent guide
 └── README.md
 ```
 
