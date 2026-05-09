@@ -39,10 +39,15 @@ constraint — the README and footer make this promise to users.
 
 Three files do all the work:
 
-- `index.html` — markup, two canvases stacked in a `.viewport`, the slider/buttons.
-- `styles.css` — retro-CRT theme. The `image-rendering: pixelated` rule on
-  `#canvas, #emojiCanvas` is load-bearing: it preserves the chunky look when
-  the 480×360 internal canvas is CSS-scaled up to the viewport.
+- `index.html` — markup, two visible canvases inside a `.viewport`, the
+  slider/buttons. `potatovision.js` is loaded as `<script type="module">`.
+- `styles.css` — retro-CRT theme. Two load-bearing rules:
+  - `image-rendering: pixelated` on `#canvas, #emojiCanvas` preserves the
+    chunky look when the 480×360 internal canvas is CSS-scaled up.
+  - `#canvas:not([hidden]), #emojiCanvas:not([hidden])` is the *only* thing
+    that makes them visible — the two canvases are swapped (not stacked) by
+    flipping the `hidden` attribute in `toggleEmojiMode`. Don't switch to
+    `display:none` / class-based hiding without updating this selector.
 - `potatovision.js` — everything else.
 
 ### Canvases (potatovision.js)
@@ -125,5 +130,6 @@ honesty of that line is part of the product.
 
 ## Git
 
-Branch: `claude/creative-greenfield-project-nLhf2`. Pushes go to that branch
-unless the user says otherwise.
+`main` is the long-lived branch. Feature work happens on `claude/...` task
+branches; pushes go to whatever branch the current task specifies, not to
+`main` directly.
