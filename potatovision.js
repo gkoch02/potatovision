@@ -137,6 +137,12 @@ function buildVignette() {
 
 async function startCamera() {
   if (stream) return;
+  // Safari (and others) refuse getUserMedia over file:// — it can hang silently
+  // rather than reject, leaving the button stuck. Bail out with a useful hint.
+  if (!navigator.mediaDevices?.getUserMedia) {
+    setStatus('Camera needs http(s) or localhost. Run `python3 -m http.server` and open http://localhost:8000.');
+    return;
+  }
   startBtn.disabled = true;
   setStatus('Requesting camera…');
   try {

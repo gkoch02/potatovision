@@ -27,6 +27,19 @@
   <div id="summary">running…</div>
   <pre id="out"></pre>
 
+  <!-- Non-module fallback: if the test module never executed (Safari blocks
+       ES module imports over file://), the summary will still say "running…"
+       after a few seconds. Replace it with an actionable hint. -->
+  <script>
+    setTimeout(() => {
+      const s = document.getElementById('summary');
+      if (s && s.textContent === 'running…') {
+        s.textContent = 'Tests did not run — open via http://localhost:8000 (some browsers block ES modules over file://).';
+        s.className = 'fail';
+      }
+    }, 3000);
+  </script>
+
   <!-- DOM stubs so potatovision.js can wire up against the same IDs as production. -->
   <div id="stubs" aria-hidden="true">
     <video id="video" muted playsinline></video>
