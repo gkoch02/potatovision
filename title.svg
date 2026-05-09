@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 260" width="900" height="260" role="img" aria-label="PotatoVision — Filmed on a potato. By choice.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 180" width="900" height="180" role="img" aria-label="PotatoVision — Filmed on a potato. By choice.">
   <defs>
     <radialGradient id="bg" cx="50%" cy="0%" r="100%">
       <stop offset="0%" stop-color="#14201a"/>
@@ -21,15 +21,15 @@
     ]]></style>
   </defs>
 
-  <rect width="900" height="260" fill="url(#bg)"/>
+  <rect width="900" height="180" fill="url(#bg)"/>
 
   <g text-anchor="middle">
-    <text class="title" x="452" y="130" fill="rgba(255,80,80,0.55)">PotatoVision 🥔</text>
-    <text class="title" x="448" y="130" fill="rgba(80,200,255,0.55)">PotatoVision 🥔</text>
-    <text class="title" x="450" y="130" fill="#9aff66" filter="url(#glow)">PotatoVision 🥔</text>
+    <text class="title" x="452" y="90" fill="rgba(255,80,80,0.55)">PotatoVision 🥔</text>
+    <text class="title" x="448" y="90" fill="rgba(80,200,255,0.55)">PotatoVision 🥔</text>
+    <text class="title" x="450" y="90" fill="#9aff66" filter="url(#glow)">PotatoVision 🥔</text>
 
-    <text class="tag" x="450" y="178">Filmed on a potato. By choice.</text>
+    <text class="tag" x="450" y="138">Filmed on a potato. By choice.</text>
   </g>
 
-  <rect width="900" height="260" fill="url(#scan)"/>
+  <rect width="900" height="180" fill="url(#scan)"/>
 </svg>
