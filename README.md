@@ -1,5 +1,7 @@
 # PotatoVision 🥔📷
 
+![PotatoVision](title.svg)
+
 > Filmed on a potato. By choice.
 
 A tiny, dependency-free web app that turns your webcam feed into the worst
