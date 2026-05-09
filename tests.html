@@ -27,14 +27,13 @@
   <div id="summary">running…</div>
   <pre id="out"></pre>
 
-  <!-- Non-module fallback: if the test module never executed (Safari blocks
-       ES module imports over file://), the summary will still say "running…"
-       after a few seconds. Replace it with an actionable hint. -->
+  <!-- Safety net: if the test script never replaces the summary text,
+       something hung silently (rare now that we load classically). -->
   <script>
     setTimeout(() => {
       const s = document.getElementById('summary');
       if (s && s.textContent === 'running…') {
-        s.textContent = 'Tests did not run — open via http://localhost:8000 (some browsers block ES modules over file://).';
+        s.textContent = 'Tests did not complete — check the browser console for errors.';
         s.className = 'fail';
       }
     }, 3000);
@@ -55,9 +54,12 @@
     <button data-preset="100"></button>
   </div>
 
-  <script type="module">
-    import './potatovision.js';
-
+  <!-- Loaded as classic scripts (not modules) so the test page works when
+       opened directly over file:// — Safari refuses ES module loads from
+       file:// origins, which would leave the page stuck at "running…". -->
+  <script src="potatovision.js"></script>
+  <script>
+  (async () => {
     const out = document.getElementById('out');
     const summary = document.getElementById('summary');
     let passed = 0;
@@ -423,6 +425,7 @@
       ? `✓ ${passed}/${total} passed`
       : `✗ ${failed} failed, ${passed}/${total} passed`;
     summary.className = failed === 0 ? '' : 'fail';
+  })();
   </script>
 </body>
 </html>
