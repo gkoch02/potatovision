@@ -42,6 +42,26 @@ own face.
   for that early-2000s camcorder vibe
 - **🥔 Emoji Mode** — replaces the canvas with a live, animated 🥔/🍟/🟧/🟫/⬛ grid
 
+## Use it as your Zoom camera
+
+PotatoVision is a web page, so it can't pretend to be a system webcam by
+itself — Zoom, Meet, and Teams pick from OS-level camera devices. The
+shortest path to "my video call now looks like a potato" is **[OBS
+Studio](https://obsproject.com)**, which is free and exists on macOS,
+Windows, and Linux:
+
+1. Run PotatoVision locally: `python3 -m http.server 8000`.
+2. In OBS, add a **Browser Source** pointing at `http://localhost:8000`
+   (1280×720 is a good size). Click **Start camera** inside the source's
+   interaction window once, so the page has camera permission.
+3. Drag the **Potato Level** slider to taste. The OBS preview updates live.
+4. Click **Start Virtual Camera** in OBS.
+5. In Zoom (or Meet, Teams, Discord, etc.), pick **OBS Virtual Camera** as
+   your camera.
+
+Frames still never touch a network — OBS reads the rendered canvas locally
+and exposes it as a virtual device on your machine.
+
 ## Privacy
 
 No frames leave your machine. There is no backend. Closing the tab pauses the
