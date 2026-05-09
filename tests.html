@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>PotatoVision tests</title>
+  <style>
+    body {
+      font: 14px/1.4 ui-monospace, Menlo, Consolas, monospace;
+      background: #0a0e0a;
+      color: #c8e6c8;
+      margin: 0;
+      padding: 24px;
+    }
+    h1 { color: #fff; margin: 0 0 12px; }
+    #summary { margin: 12px 0; padding: 8px 12px; background: #142214; border-left: 4px solid #6c6; }
+    #summary.fail { border-left-color: #f55; color: #fcc; }
+    pre { background: #0f1a0f; padding: 12px; border: 1px solid #243; overflow: auto; }
+    .pass { color: #6c6; }
+    .fail { color: #f88; }
+    .group { color: #fff; font-weight: bold; margin-top: 8px; display: block; }
+    /* Stubs need to exist for potatovision.js to wire up, but stay invisible. */
+    #stubs { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+  </style>
+</head>
+<body>
+  <h1>PotatoVision tests 🥔🧪</h1>
+  <div id="summary">running…</div>
+  <pre id="out"></pre>
+
+  <!-- DOM stubs so potatovision.js can wire up against the same IDs as production. -->
+  <div id="stubs" aria-hidden="true">
+    <video id="video" muted playsinline></video>
+    <canvas id="canvas"></canvas>
+    <canvas id="emojiCanvas"></canvas>
+    <div id="status"></div>
+    <button id="start"></button>
+    <button id="snap"></button>
+    <input type="range" id="level" min="0" max="100" value="0" />
+    <output id="levelOut">0</output>
+    <input type="checkbox" id="emojiMode" />
+    <button data-preset="0"></button>
+    <button data-preset="100"></button>
+  </div>
+
+  <script type="module">
+    import './potatovision.js';
+
+    const out = document.getElementById('out');
+    const summary = document.getElementById('summary');
+    let passed = 0;
+    let failed = 0;
+
+    function log(line, cls = '') {
+      const span = document.createElement('span');
+      if (cls) span.className = cls;
+      span.textContent = line + '\n';
+      out.appendChild(span);
+    }
+
+    function group(name) {
+      log(name, 'group');
+    }
+
+    function pass(name) {
+      passed++;
+      log('  ✓ ' + name, 'pass');
+    }
+
+    function fail(name, detail) {
+      failed++;
+      log('  ✗ ' + name + '  ' + detail, 'fail');
+    }
+
+    function eq(name, actual, expected) {
+      // Strict for null / number-as-null / object shapes via JSON compare for simple cases.
+      const same = (typeof actual === 'object' && actual !== null)
+        ? JSON.stringify(actual) === JSON.stringify(expected)
+        : Object.is(actual, expected);
+      if (same) pass(name);
+      else fail(name, `expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+    }
+
+    function close(name, actual, expected, eps = 1e-6) {
+      if (typeof actual === 'number' && Math.abs(actual - expected) < eps) pass(name);
+      else fail(name, `expected ≈ ${expected}, got ${actual}`);
+    }
+
+    // Wait one tick so the imported module's top-level code finishes.
+    await Promise.resolve();
+    const PV = window.PV;
+    if (!PV) {
+      summary.textContent = 'FAIL: window.PV not exposed by potatovision.js';
+      summary.className = 'fail';
+      throw new Error('PV missing');
+    }
+
+    // ---------- helpers ----------
+    group('clamp / lerp / easeIn');
+    eq('clamp middle', PV.clamp(5, 0, 10), 5);
+    eq('clamp below lo', PV.clamp(-1, 0, 10), 0);
+    eq('clamp above hi', PV.clamp(11, 0, 10), 10);
+    eq('clamp lo === hi', PV.clamp(5, 7, 7), 7);
+    eq('lerp t=0', PV.lerp(0, 10, 0), 0);
+    eq('lerp t=1', PV.lerp(0, 10, 1), 10);
+    eq('lerp t=0.5', PV.lerp(0, 10, 0.5), 5);
+    eq('lerp negative range', PV.lerp(10, 0, 0.25), 7.5);
+    eq('easeIn 0', PV.easeIn(0), 0);
+    eq('easeIn 1', PV.easeIn(1), 1);
+    eq('easeIn 0.5', PV.easeIn(0.5), 0.25);
+
+    // ---------- pixelTarget ----------
+    group('pixelTarget');
+    eq('p=0 → full size',  PV.pixelTarget(0, 480, 360), { w: 480, h: 360 });
+    eq('p=1 → minimum',    PV.pixelTarget(1, 480, 360), { w: 28,  h: 21  });
+    eq('p=0.5 → midband',  PV.pixelTarget(0.5, 480, 360), { w: 367, h: 275 });
+    // Aspect preservation regardless of p.
+    {
+      const r = PV.pixelTarget(0.7, 480, 360);
+      close('p=0.7 keeps 4:3', r.w / r.h, 480 / 360, 0.05);
+    }
+
+    // ---------- quantizationStep ----------
+    group('quantizationStep');
+    eq('p=0 → null',      PV.quantizationStep(0), null);
+    eq('p=0.05 → null (boundary inclusive)', PV.quantizationStep(0.05), null);
+    eq('p=1 → 1 bit, step=255', PV.quantizationStep(1), { bits: 1, levels: 2, step: 255 });
+    {
+      const r = PV.quantizationStep(0.06);
+      eq('p=0.06 levels power of two', r.levels, 1 << r.bits);
+      eq('p=0.06 step exact', r.step, 255 / (r.levels - 1));
+    }
+
+    // ---------- chromaticParams ----------
+    group('chromaticParams');
+    eq('p=0.25 → null (boundary)', PV.chromaticParams(0.25), null);
+    {
+      const r = PV.chromaticParams(1);
+      eq('p=1 offset', r.offset, 9);
+      close('p=1 alpha', r.alpha, 0.45);
+    }
+    {
+      const r = PV.chromaticParams(0.26);
+      eq('p=0.26 offset round', r.offset, 2);  // round(lerp(0, 9, 0.26)) = round(2.34)
+      close('p=0.26 alpha',     r.alpha, 0.45 * 0.26);
+    }
+
+    // ---------- scanlineAlpha / vignetteAlpha ----------
+    group('scanlineAlpha / vignetteAlpha');
+    eq('scanline p=0.15 → null', PV.scanlineAlpha(0.15), null);
+    close('scanline p=1 → 0.55', PV.scanlineAlpha(1), 0.55);
+    eq('vignette p=0.10 → null', PV.vignetteAlpha(0.10), null);
+    close('vignette p=1 → 0.85', PV.vignetteAlpha(1), 0.85);
+
+    // ---------- greenTint ----------
+    group('greenTint');
+    eq('p=0.7 → null (boundary)', PV.greenTint(0.7), null);
+    close('p=0.85 → midpoint',    PV.greenTint(0.85), 0.89);
+    close('p=1 → 0.78',           PV.greenTint(1), 0.78);
+
+    // ---------- stutterChance ----------
+    group('stutterChance');
+    eq('p=0 → 0',         PV.stutterChance(0), 0);
+    eq('p=0.85 → 0',      PV.stutterChance(0.85), 0);
+    close('p=1 → 0.55',   PV.stutterChance(1), 0.55);
+    // Monotonic in the engaged range.
+    {
+      let mono = true;
+      let prev = -1;
+      for (let p = 0.85; p <= 1.0001; p += 0.01) {
+        const c = PV.stutterChance(p);
+        if (c < prev - 1e-9) { mono = false; break; }
+        prev = c;
+      }
+      if (mono) pass('monotonic on [0.85, 1]');
+      else      fail('monotonic on [0.85, 1]', 'curve dipped');
+    }
+
+    // ---------- jpegQuality ----------
+    group('jpegQuality');
+    close('level=0 → 0.92',  PV.jpegQuality(0), 0.92);
+    close('level=1 → 0.03',  PV.jpegQuality(1), 0.03);
+    close('level=0.5 → 0.6975', PV.jpegQuality(0.5), 0.6975);
+    // Pristine path threshold contract: at level<0.05 the snap path skips JPEG entirely,
+    // but the curve itself must stay within toDataURL's accepted range.
+    {
+      let inRange = true;
+      for (let l = 0; l <= 1.0001; l += 0.05) {
+        const q = PV.jpegQuality(l);
+        if (q < 0 || q > 1) { inRange = false; break; }
+      }
+      if (inRange) pass('quality stays in [0, 1]');
+      else         fail('quality stays in [0, 1]', 'out of range');
+    }
+
+    // ---------- emojiBucket ----------
+    group('emojiBucket (off-by-one trap at lum=1)');
+    const N = PV.EMOJI_PALETTE.length;
+    eq('lum=0 → 0',                PV.emojiBucket(0, N), 0);
+    eq('lum=1 → N-1 (clamped)',    PV.emojiBucket(1, N), N - 1);
+    eq('lum=0.5 with 5 palette',   PV.emojiBucket(0.5, 5), 2);
+    eq('lum=0.99 with 5 palette',  PV.emojiBucket(0.99, 5), 4);
+    eq('lum=0.21 with 5 palette',  PV.emojiBucket(0.21, 5), 1);
+    eq('palette has 5 entries',    N, 5);
+
+    // ---------- effect-threshold ordering (regression guard) ----------
+    group('effect thresholds in expected order');
+    // If anyone bumps a threshold accidentally, this catches the obvious case.
+    eq('quant disengaged at 0.05', PV.quantizationStep(0.05), null);
+    eq('chroma disengaged at 0.25', PV.chromaticParams(0.25), null);
+    eq('scanline disengaged at 0.15', PV.scanlineAlpha(0.15), null);
+    eq('vignette disengaged at 0.10', PV.vignetteAlpha(0.10), null);
+    eq('green disengaged at 0.70', PV.greenTint(0.70), null);
+    eq('stutter disengaged at 0.85', PV.stutterChance(0.85), 0);
+
+    // ---------- index.html DOM-ID contract ----------
+    // Catches: someone renamed an element ID without updating potatovision.js.
+    // Requires fetch over HTTP — under file:// the request fails and we skip.
+    group('index.html DOM contract');
+    {
+      const required = [
+        'video', 'canvas', 'emojiCanvas', 'status',
+        'start', 'snap', 'level', 'levelOut', 'emojiMode',
+      ];
+      let html = null;
+      try {
+        const res = await fetch('index.html');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        html = await res.text();
+      } catch (e) {
+        log('  ⚠ skipped (open via http://localhost:8000): ' + e.message);
+      }
+      if (html) {
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        for (const id of required) {
+          if (doc.getElementById(id)) pass('index.html has #' + id);
+          else                        fail('index.html has #' + id, 'missing');
+        }
+        if (doc.querySelectorAll('[data-preset]').length > 0) pass('index.html has [data-preset] buttons');
+        else                                                  fail('index.html has [data-preset] buttons', 'none found');
+      }
+    }
+
+    // ---------- side-effecting tests (camera lifecycle, snapshot) ----------
+    // These click real buttons and patch globals. They use try/finally to
+    // restore everything so later tests see a clean environment.
+
+    function flush() {
+      // Drain microtasks + one macrotask so awaited promises in startCamera settle.
+      return new Promise((r) => setTimeout(r, 0));
+    }
+
+    function patchHidden(value) {
+      // The real `hidden` is a getter on Document.prototype. Override on the
+      // instance, and on restore delete the override so the prototype getter
+      // takes effect again.
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => value });
+      return () => { delete document.hidden; };
+    }
+
+    async function startStubbedCamera(stream) {
+      const origGUM  = navigator.mediaDevices && navigator.mediaDevices.getUserMedia;
+      const origPlay = HTMLVideoElement.prototype.play;
+      const origRAF  = window.requestAnimationFrame;
+      if (!navigator.mediaDevices) {
+        Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: {} });
+      }
+      navigator.mediaDevices.getUserMedia = async () => stream;
+      HTMLVideoElement.prototype.play = function () { return Promise.resolve(); };
+      window.requestAnimationFrame = () => 0;  // swallow render() scheduling
+
+      document.getElementById('start').click();
+      await flush();
+      await flush();
+
+      return () => {
+        window.requestAnimationFrame = origRAF;
+        HTMLVideoElement.prototype.play = origPlay;
+        if (origGUM) navigator.mediaDevices.getUserMedia = origGUM;
+      };
+    }
+
+    group('camera lifecycle: visibilitychange stops the stream');
+    {
+      let stopCount = 0;
+      const mockTrack = { kind: 'video', stop() { stopCount++; } };
+      const mockStream = { getTracks: () => [mockTrack] };
+      const restoreCam = await startStubbedCamera(mockStream);
+      const restoreHidden = patchHidden(true);
+      try {
+        const startBtn = document.getElementById('start');
+        // Sanity: camera path was actually started.
+        eq('start button text after start', startBtn.textContent, 'Camera on');
+
+        document.dispatchEvent(new Event('visibilitychange'));
+        await flush();
+
+        eq('track.stop() called exactly once', stopCount, 1);
+        eq('start button re-enabled',          startBtn.disabled, false);
+        eq('start button text reset',          startBtn.textContent, 'Start camera');
+        const status = document.getElementById('status').textContent;
+        if (/paused/i.test(status)) pass('status mentions paused');
+        else                        fail('status mentions paused', JSON.stringify(status));
+      } finally {
+        restoreHidden();
+        restoreCam();
+      }
+    }
+
+    group('snap(): Pristine skips JPEG, JPEG path runs above threshold');
+    {
+      const mockTrack = { kind: 'video', stop() {} };
+      const mockStream = { getTracks: () => [mockTrack] };
+      const restoreCam = await startStubbedCamera(mockStream);
+
+      const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
+      const origToBlob    = HTMLCanvasElement.prototype.toBlob;
+      const origAClick    = HTMLAnchorElement.prototype.click;
+
+      const dataUrlCalls = [];
+      const blobCalls    = [];
+
+      // Tiny 1×1 transparent PNG to satisfy <img>.src + onload in the JPEG path.
+      const tinyDataUrl = 'data:image/png;base64,' +
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+
+      HTMLCanvasElement.prototype.toDataURL = function (type, q) {
+        dataUrlCalls.push({ type, q });
+        return tinyDataUrl;
+      };
+      HTMLCanvasElement.prototype.toBlob = function (cb, type) {
+        blobCalls.push({ type });
+        // Don't actually create a blob — short-circuit the download.
+      };
+      HTMLAnchorElement.prototype.click = function () {};
+
+      const levelInput = document.getElementById('level');
+      const setSlider = (v) => {
+        levelInput.value = String(v);
+        levelInput.dispatchEvent(new Event('input'));
+      };
+
+      try {
+        // --- Pristine path (level < 0.05 → 5/100 = 0.05 is NOT pristine; 4 is) ---
+        setSlider(0);
+        dataUrlCalls.length = 0;
+        blobCalls.length    = 0;
+        document.getElementById('snap').click();
+        const jpegFromPristine = dataUrlCalls.filter((c) => c.type === 'image/jpeg');
+        eq('Pristine: no toDataURL("image/jpeg")', jpegFromPristine.length, 0);
+        if (blobCalls.length >= 1) pass('Pristine: toBlob called for download');
+        else                       fail('Pristine: toBlob called for download', 'never called');
+
+        // Boundary: slider = 4 → level = 0.04 → still pristine.
+        setSlider(4);
+        dataUrlCalls.length = 0;
+        blobCalls.length    = 0;
+        document.getElementById('snap').click();
+        eq('level=0.04 still Pristine (no JPEG)',
+           dataUrlCalls.filter((c) => c.type === 'image/jpeg').length, 0);
+
+        // Boundary: slider = 5 → level = 0.05 → NOT pristine (level < 0.05 is false).
+        setSlider(5);
+        dataUrlCalls.length = 0;
+        blobCalls.length    = 0;
+        document.getElementById('snap').click();
+        const jpegAt5 = dataUrlCalls.filter((c) => c.type === 'image/jpeg');
+        eq('level=0.05 takes JPEG path', jpegAt5.length, 1);
+
+        // --- JPEG path with a substantial level: assert quality matches the curve ---
+        setSlider(50);
+        dataUrlCalls.length = 0;
+        document.getElementById('snap').click();
+        const jpeg50 = dataUrlCalls.filter((c) => c.type === 'image/jpeg');
+        if (jpeg50.length === 1) {
+          pass('level=0.5 calls toDataURL once with image/jpeg');
+          close('level=0.5 quality matches jpegQuality(0.5)',
+                jpeg50[0].q, PV.jpegQuality(0.5));
+        } else {
+          fail('level=0.5 calls toDataURL once with image/jpeg',
+               'got ' + jpeg50.length + ' calls');
+        }
+
+        // Drain any pending img.onload from the JPEG snaps above before the
+        // camera-off assertions, so their async toBlob calls don't pollute.
+        await flush();
+        await flush();
+
+        // Snap with camera off should not produce a download.
+        const restoreHidden = patchHidden(true);
+        document.dispatchEvent(new Event('visibilitychange'));
+        await flush();
+        restoreHidden();
+        dataUrlCalls.length = 0;
+        blobCalls.length    = 0;
+        document.getElementById('snap').click();
+        await flush();
+        eq('snap with camera off: no toDataURL', dataUrlCalls.length, 0);
+        eq('snap with camera off: no toBlob',    blobCalls.length,    0);
+      } finally {
+        HTMLCanvasElement.prototype.toDataURL = origToDataURL;
+        HTMLCanvasElement.prototype.toBlob    = origToBlob;
+        HTMLAnchorElement.prototype.click     = origAClick;
+        restoreCam();
+      }
+    }
+
+    // ---------- summary ----------
+    const total = passed + failed;
+    summary.textContent = failed === 0
+      ? `✓ ${passed}/${total} passed`
+      : `✗ ${failed} failed, ${passed}/${total} passed`;
+    summary.className = failed === 0 ? '' : 'fail';
+  </script>
+</body>
+</html>

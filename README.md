@@ -45,8 +45,8 @@ own face.
 ## Privacy
 
 No frames leave your machine. There is no backend. Closing the tab pauses the
-camera. So does switching to another tab. The code is ~250 lines of plain JS
-in `potatovision.js` — read it.
+camera. So does switching to another tab — and `tests.html` asserts this.
+The code is plain JS in `potatovision.js` — read it.
 
 ## Browser support
 
@@ -55,6 +55,13 @@ in `potatovision.js` — read it.
 - ⚠️ Safari — `getUserMedia` requires HTTPS or `localhost`
 - ❌ IE — sorry, the potato is too modern
 
+## Tests
+
+There's no test runner — open `tests.html` in a browser the same way you run
+the app. It imports `potatovision.js` against stub DOM elements and runs
+~70 assertions covering the per-stage effect math, the snapshot path, and the
+camera-paused-when-tab-hidden privacy promise. Pass/fail counts at the top.
+
 ## Files
 
 ```
@@ -62,6 +69,7 @@ potatovision/
 ├── index.html
 ├── styles.css
 ├── potatovision.js
+├── tests.html
 └── README.md
 ```
 

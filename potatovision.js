@@ -58,6 +58,55 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const lerp  = (a, b, t)   => a + (b - a) * t;
 const easeIn = (t) => t * t;
 
+// ---------- pure effect math (testable) ----------
+
+// Pixelation target dimensions for the offscreen effects canvas.
+function pixelTarget(p, w, h, minW = 28) {
+  const targetW = Math.max(minW, Math.round(lerp(w, minW, easeIn(p))));
+  const targetH = Math.max(1, Math.round(targetW * h / w));
+  return { w: targetW, h: targetH };
+}
+
+// Color quantization parameters, or null below the engagement threshold.
+function quantizationStep(p) {
+  if (p <= 0.05) return null;
+  const bits = Math.max(1, Math.round(lerp(8, 1, easeIn(p))));
+  const levels = 1 << bits;
+  return { bits, levels, step: 255 / (levels - 1) };
+}
+
+// Chromatic-ghosting offset (px) and blend alpha, or null below threshold.
+function chromaticParams(p) {
+  if (p <= 0.25) return null;
+  return { offset: Math.round(lerp(0, 9, p)), alpha: lerp(0, 0.45, p) };
+}
+
+function scanlineAlpha(p)  { return p > 0.15 ? lerp(0, 0.55, p) : null; }
+function vignetteAlpha(p)  { return p > 0.10 ? lerp(0, 0.85, p) : null; }
+
+// Sickly-green multiply tint factor for the R and B channels (G stays at 1).
+function greenTint(p) {
+  if (p <= 0.7) return null;
+  return lerp(1, 0.78, (p - 0.7) / 0.3);
+}
+
+// Probability of skipping a frame (frame stutter). 0 below the engagement threshold.
+function stutterChance(p) {
+  if (p <= 0.85) return 0;
+  return lerp(0, 0.55, (p - 0.85) / 0.15);
+}
+
+// JPEG quality used by the snapshot path. clamp guards against future curve tweaks.
+function jpegQuality(level) {
+  return clamp(lerp(0.92, 0.03, easeIn(level)), 0.03, 0.92);
+}
+
+// Map a luminance in [0, 1] to a palette index in [0, paletteSize - 1].
+// The clamp matters at lum === 1 (floor(1.0 * n) === n, off by one).
+function emojiBucket(lum, paletteSize) {
+  return clamp(Math.floor(lum * paletteSize), 0, paletteSize - 1);
+}
+
 function setStatus(msg) {
   statusEl.textContent = msg;
   statusEl.style.display = msg ? 'block' : 'none';
@@ -122,15 +171,13 @@ function render(now) {
   const p = level;
 
   // Frame stutter at high potato level — keep the last canvas content.
-  if (p > 0.85 && Math.random() < lerp(0, 0.55, (p - 0.85) / 0.15)) {
+  if (Math.random() < stutterChance(p)) {
     requestAnimationFrame(render);
     return;
   }
 
   // 1) Pixelate: draw video into tiny offscreen canvas.
-  const minW = 28;
-  const targetW = Math.max(minW, Math.round(lerp(W, minW, easeIn(p))));
-  const targetH = Math.max(1, Math.round(targetW * H / W));
+  const { w: targetW, h: targetH } = pixelTarget(p, W, H);
   effectsCanvas.width = targetW;
   effectsCanvas.height = targetH;
   effectsCtx.imageSmoothingEnabled = true;
@@ -138,10 +185,9 @@ function render(now) {
   effectsCtx.drawImage(video, 0, 0, targetW, targetH);
 
   // 2) Color quantization on the small canvas (cheap).
-  if (p > 0.05) {
-    const bits = Math.max(1, Math.round(lerp(8, 1, easeIn(p))));
-    const levels = 1 << bits;
-    const step = 255 / (levels - 1);
+  const quant = quantizationStep(p);
+  if (quant) {
+    const { step } = quant;
     const img = effectsCtx.getImageData(0, 0, targetW, targetH);
     const d = img.data;
     for (let i = 0; i < d.length; i += 4) {
@@ -158,34 +204,36 @@ function render(now) {
   ctx.drawImage(effectsCanvas, 0, 0, W, H);
 
   // 4) Chromatic ghosting (poor man's RGB shift). Two offset copies blended in.
-  if (p > 0.25) {
-    const offset = Math.round(lerp(0, 9, p));
+  const chroma = chromaticParams(p);
+  if (chroma) {
     ctx.globalCompositeOperation = 'screen';
-    ctx.globalAlpha = lerp(0, 0.45, p);
-    ctx.drawImage(effectsCanvas, -offset, 0, W, H);
-    ctx.drawImage(effectsCanvas,  offset, 0, W, H);
+    ctx.globalAlpha = chroma.alpha;
+    ctx.drawImage(effectsCanvas, -chroma.offset, 0, W, H);
+    ctx.drawImage(effectsCanvas,  chroma.offset, 0, W, H);
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
   }
 
   // 5) Scanlines.
-  if (p > 0.15) {
-    ctx.globalAlpha = lerp(0, 0.55, p);
+  const sa = scanlineAlpha(p);
+  if (sa !== null) {
+    ctx.globalAlpha = sa;
     ctx.drawImage(scanlineCanvas, 0, 0);
     ctx.globalAlpha = 1;
   }
 
   // 6) Vignette.
-  if (p > 0.1) {
-    ctx.globalAlpha = lerp(0, 0.85, p);
+  const va = vignetteAlpha(p);
+  if (va !== null) {
+    ctx.globalAlpha = va;
     ctx.drawImage(vignetteCanvas, 0, 0);
     ctx.globalAlpha = 1;
   }
 
   // 7) Color cast — sickly green at extreme potato levels.
-  if (p > 0.7) {
+  const tint = greenTint(p);
+  if (tint !== null) {
     ctx.globalCompositeOperation = 'multiply';
-    const tint = lerp(1, 0.78, (p - 0.7) / 0.3);
     ctx.fillStyle = `rgba(${Math.round(255*tint)}, 255, ${Math.round(255*tint)}, 1)`;
     ctx.fillRect(0, 0, W, H);
     ctx.globalCompositeOperation = 'source-over';
@@ -236,7 +284,7 @@ function renderEmoji(now) {
     for (let x = 0; x < EMOJI_COLS; x++) {
       const i = (y * EMOJI_COLS + x) * 4;
       const lum = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114) / 255;
-      const idx = clamp(Math.floor(lum * n), 0, n - 1);
+      const idx = emojiBucket(lum, n);
       emojiCtx.drawImage(
         emojiTiles[idx],
         Math.round(x * EMOJI_CELL_W),
@@ -286,8 +334,7 @@ function snap() {
   }
 
   // Otherwise push it through a punishing JPEG pass, then re-decode and stamp.
-  const q = clamp(lerp(0.92, 0.03, easeIn(level)), 0.03, 0.92);
-  const url = out.toDataURL('image/jpeg', q);
+  const url = out.toDataURL('image/jpeg', jpegQuality(level));
 
   const img = new Image();
   img.onload = () => {
@@ -340,3 +387,12 @@ document.addEventListener('visibilitychange', () => {
 });
 
 setLevel(0);
+
+// Exposed for tests.html. Production code does not read this.
+window.PV = {
+  clamp, lerp, easeIn,
+  pixelTarget, quantizationStep, chromaticParams,
+  scanlineAlpha, vignetteAlpha, greenTint,
+  stutterChance, jpegQuality, emojiBucket,
+  W, H, EMOJI_PALETTE,
+};
