@@ -212,6 +212,198 @@
     eq('green disengaged at 0.70', PV.greenTint(0.70), null);
     eq('stutter disengaged at 0.85', PV.stutterChance(0.85), 0);
 
+    // ---------- index.html DOM-ID contract ----------
+    // Catches: someone renamed an element ID without updating potatovision.js.
+    // Requires fetch over HTTP — under file:// the request fails and we skip.
+    group('index.html DOM contract');
+    {
+      const required = [
+        'video', 'canvas', 'emojiCanvas', 'status',
+        'start', 'snap', 'level', 'levelOut', 'emojiMode',
+      ];
+      let html = null;
+      try {
+        const res = await fetch('index.html');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        html = await res.text();
+      } catch (e) {
+        log('  ⚠ skipped (open via http://localhost:8000): ' + e.message);
+      }
+      if (html) {
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        for (const id of required) {
+          if (doc.getElementById(id)) pass('index.html has #' + id);
+          else                        fail('index.html has #' + id, 'missing');
+        }
+        if (doc.querySelectorAll('[data-preset]').length > 0) pass('index.html has [data-preset] buttons');
+        else                                                  fail('index.html has [data-preset] buttons', 'none found');
+      }
+    }
+
+    // ---------- side-effecting tests (camera lifecycle, snapshot) ----------
+    // These click real buttons and patch globals. They use try/finally to
+    // restore everything so later tests see a clean environment.
+
+    function flush() {
+      // Drain microtasks + one macrotask so awaited promises in startCamera settle.
+      return new Promise((r) => setTimeout(r, 0));
+    }
+
+    function patchHidden(value) {
+      // The real `hidden` is a getter on Document.prototype. Override on the
+      // instance, and on restore delete the override so the prototype getter
+      // takes effect again.
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => value });
+      return () => { delete document.hidden; };
+    }
+
+    async function startStubbedCamera(stream) {
+      const origGUM  = navigator.mediaDevices && navigator.mediaDevices.getUserMedia;
+      const origPlay = HTMLVideoElement.prototype.play;
+      const origRAF  = window.requestAnimationFrame;
+      if (!navigator.mediaDevices) {
+        Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: {} });
+      }
+      navigator.mediaDevices.getUserMedia = async () => stream;
+      HTMLVideoElement.prototype.play = function () { return Promise.resolve(); };
+      window.requestAnimationFrame = () => 0;  // swallow render() scheduling
+
+      document.getElementById('start').click();
+      await flush();
+      await flush();
+
+      return () => {
+        window.requestAnimationFrame = origRAF;
+        HTMLVideoElement.prototype.play = origPlay;
+        if (origGUM) navigator.mediaDevices.getUserMedia = origGUM;
+      };
+    }
+
+    group('camera lifecycle: visibilitychange stops the stream');
+    {
+      let stopCount = 0;
+      const mockTrack = { kind: 'video', stop() { stopCount++; } };
+      const mockStream = { getTracks: () => [mockTrack] };
+      const restoreCam = await startStubbedCamera(mockStream);
+      const restoreHidden = patchHidden(true);
+      try {
+        const startBtn = document.getElementById('start');
+        // Sanity: camera path was actually started.
+        eq('start button text after start', startBtn.textContent, 'Camera on');
+
+        document.dispatchEvent(new Event('visibilitychange'));
+        await flush();
+
+        eq('track.stop() called exactly once', stopCount, 1);
+        eq('start button re-enabled',          startBtn.disabled, false);
+        eq('start button text reset',          startBtn.textContent, 'Start camera');
+        const status = document.getElementById('status').textContent;
+        if (/paused/i.test(status)) pass('status mentions paused');
+        else                        fail('status mentions paused', JSON.stringify(status));
+      } finally {
+        restoreHidden();
+        restoreCam();
+      }
+    }
+
+    group('snap(): Pristine skips JPEG, JPEG path runs above threshold');
+    {
+      const mockTrack = { kind: 'video', stop() {} };
+      const mockStream = { getTracks: () => [mockTrack] };
+      const restoreCam = await startStubbedCamera(mockStream);
+
+      const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
+      const origToBlob    = HTMLCanvasElement.prototype.toBlob;
+      const origAClick    = HTMLAnchorElement.prototype.click;
+
+      const dataUrlCalls = [];
+      const blobCalls    = [];
+
+      // Tiny 1×1 transparent PNG to satisfy <img>.src + onload in the JPEG path.
+      const tinyDataUrl = 'data:image/png;base64,' +
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+
+      HTMLCanvasElement.prototype.toDataURL = function (type, q) {
+        dataUrlCalls.push({ type, q });
+        return tinyDataUrl;
+      };
+      HTMLCanvasElement.prototype.toBlob = function (cb, type) {
+        blobCalls.push({ type });
+        // Don't actually create a blob — short-circuit the download.
+      };
+      HTMLAnchorElement.prototype.click = function () {};
+
+      const levelInput = document.getElementById('level');
+      const setSlider = (v) => {
+        levelInput.value = String(v);
+        levelInput.dispatchEvent(new Event('input'));
+      };
+
+      try {
+        // --- Pristine path (level < 0.05 → 5/100 = 0.05 is NOT pristine; 4 is) ---
+        setSlider(0);
+        dataUrlCalls.length = 0;
+        blobCalls.length    = 0;
+        document.getElementById('snap').click();
+        const jpegFromPristine = dataUrlCalls.filter((c) => c.type === 'image/jpeg');
+        eq('Pristine: no toDataURL("image/jpeg")', jpegFromPristine.length, 0);
+        if (blobCalls.length >= 1) pass('Pristine: toBlob called for download');
+        else                       fail('Pristine: toBlob called for download', 'never called');
+
+        // Boundary: slider = 4 → level = 0.04 → still pristine.
+        setSlider(4);
+        dataUrlCalls.length = 0;
+        blobCalls.length    = 0;
+        document.getElementById('snap').click();
+        eq('level=0.04 still Pristine (no JPEG)',
+           dataUrlCalls.filter((c) => c.type === 'image/jpeg').length, 0);
+
+        // Boundary: slider = 5 → level = 0.05 → NOT pristine (level < 0.05 is false).
+        setSlider(5);
+        dataUrlCalls.length = 0;
+        blobCalls.length    = 0;
+        document.getElementById('snap').click();
+        const jpegAt5 = dataUrlCalls.filter((c) => c.type === 'image/jpeg');
+        eq('level=0.05 takes JPEG path', jpegAt5.length, 1);
+
+        // --- JPEG path with a substantial level: assert quality matches the curve ---
+        setSlider(50);
+        dataUrlCalls.length = 0;
+        document.getElementById('snap').click();
+        const jpeg50 = dataUrlCalls.filter((c) => c.type === 'image/jpeg');
+        if (jpeg50.length === 1) {
+          pass('level=0.5 calls toDataURL once with image/jpeg');
+          close('level=0.5 quality matches jpegQuality(0.5)',
+                jpeg50[0].q, PV.jpegQuality(0.5));
+        } else {
+          fail('level=0.5 calls toDataURL once with image/jpeg',
+               'got ' + jpeg50.length + ' calls');
+        }
+
+        // Drain any pending img.onload from the JPEG snaps above before the
+        // camera-off assertions, so their async toBlob calls don't pollute.
+        await flush();
+        await flush();
+
+        // Snap with camera off should not produce a download.
+        const restoreHidden = patchHidden(true);
+        document.dispatchEvent(new Event('visibilitychange'));
+        await flush();
+        restoreHidden();
+        dataUrlCalls.length = 0;
+        blobCalls.length    = 0;
+        document.getElementById('snap').click();
+        await flush();
+        eq('snap with camera off: no toDataURL', dataUrlCalls.length, 0);
+        eq('snap with camera off: no toBlob',    blobCalls.length,    0);
+      } finally {
+        HTMLCanvasElement.prototype.toDataURL = origToDataURL;
+        HTMLCanvasElement.prototype.toBlob    = origToBlob;
+        HTMLAnchorElement.prototype.click     = origAClick;
+        restoreCam();
+      }
+    }
+
     // ---------- summary ----------
     const total = passed + failed;
     summary.textContent = failed === 0
