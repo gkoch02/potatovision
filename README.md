@@ -5,7 +5,12 @@
 > Filmed on a potato. By choice.
 
 <p align="center">
-  <img src="preview-skype-2008.svg" alt='Preview at Potato Level 65 — the "Skype 2008" preset' />
+  <img src="preview-skype-2008.png" alt='Preview at Potato Level 65 — the "Skype 2008" preset' />
+  <br/>
+  <sub><i>Potato Level 65 — the "Skype 2008" preset, applied to a real photo.<br/>
+  Source photo: "LeVar Burton Photo Op GalaxyCon Raleigh 2023" by
+  <a href="https://commons.wikimedia.org/w/index.php?curid=135352231">Super Festivals</a>,
+  <a href="https://creativecommons.org/licenses/by/2.0/">CC BY 2.0</a>.</i></sub>
 </p>
 
 A tiny, dependency-free web app that turns your webcam feed into the worst
@@ -102,7 +107,7 @@ potatovision/
 ├── potatovision.js          # all runtime logic
 ├── tests.html               # in-browser assertion harness
 ├── title.svg                # README banner
-├── preview-skype-2008.svg   # README preview frame
+├── preview-skype-2008.png   # README preview frame (real filter, level 65)
 ├── CLAUDE.md                # contributor / agent guide
 └── README.md
 ```
