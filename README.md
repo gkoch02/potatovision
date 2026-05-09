@@ -61,8 +61,12 @@ Windows, and Linux:
 5. In Zoom (or Meet, Teams, Discord, etc.), pick **OBS Virtual Camera** as
    your camera.
 
-Frames still never touch a network — OBS reads the rendered canvas locally
-and exposes it as a virtual device on your machine.
+PotatoVision and OBS both stay fully local — the page renders in your
+browser and OBS reads that canvas off your machine to expose a virtual
+camera device. Once you select **OBS Virtual Camera** inside Zoom/Meet/
+Teams, though, the conferencing app transmits that video to the call like
+any other webcam feed. The "no frames leave your machine" promise covers
+PotatoVision itself, not whatever app you point at the virtual camera.
 
 ## Privacy
 
