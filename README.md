@@ -5,9 +5,9 @@
 > Filmed on a potato. By choice.
 
 <p align="center">
-  <img src="preview-found-footage.png" alt='Preview at Potato Level 90 — the "Found Footage" preset' />
+  <img src="preview-strip.png" alt="Preview strip showing all five presets — Pristine, Zoom 2020, Skype 2008, Found Footage, Actual Potato — applied to the same photo" />
   <br/>
-  <sub><i>Potato Level 90 — the "Found Footage" preset, applied to a real photo.<br/>
+  <sub><i>The five presets, applied to the same photo.<br/>
   Source photo: "LeVar Burton Photo Op GalaxyCon Raleigh 2023" by
   <a href="https://commons.wikimedia.org/w/index.php?curid=135352231">Super Festivals</a>,
   <a href="https://creativecommons.org/licenses/by/2.0/">CC BY 2.0</a>.</i></sub>
@@ -107,7 +107,7 @@ potatovision/
 ├── potatovision.js          # all runtime logic
 ├── tests.html               # in-browser assertion harness
 ├── title.svg                # README banner
-├── preview-found-footage.png # README preview frame (real filter, level 90)
+├── preview-strip.png        # README preview strip (all 5 presets, real filter)
 ├── CLAUDE.md                # contributor / agent guide
 └── README.md
 ```
