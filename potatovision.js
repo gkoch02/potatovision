@@ -12,6 +12,7 @@ const levelInput  = $('level');
 const levelOut    = $('levelOut');
 const emojiToggle = $('emojiMode');
 const presetBtns  = document.querySelectorAll('[data-preset]');
+const previewEls  = document.querySelectorAll('[data-preview]');
 
 const W = 480;
 const H = 360;
@@ -39,6 +40,16 @@ let running = false;
 let level = 0;            // 0..1
 let emojiMode = false;
 let lastEmojiAt = 0;
+let lastPreviewAt = 0;
+
+// One entry per [data-preview] canvas in the page. Each preview re-runs the
+// main pipeline at its preset's level so the user can see, live, what each
+// preset will look like before clicking it.
+const previews = Array.from(previewEls).map((c) => ({
+  canvas: c,
+  ctx: c.getContext('2d', { willReadFrequently: true }),
+  level: Math.min(1, Math.max(0, Number(c.dataset.preview) / 100)) || 0,
+}));
 
 // Dark → bright. Luminance buckets pick from this list.
 const EMOJI_PALETTE = ['⬛', '🟫', '🟧', '🍟', '🥔'];
@@ -170,25 +181,35 @@ function render(now) {
 
   if (emojiMode) {
     renderEmoji(now);
-    requestAnimationFrame(render);
-    return;
+  } else {
+    renderMain();
   }
 
+  renderPreviews(now);
+  requestAnimationFrame(render);
+}
+
+function renderMain() {
   const p = level;
-
   // Frame stutter at high potato level — keep the last canvas content.
-  if (Math.random() < stutterChance(p)) {
-    requestAnimationFrame(render);
-    return;
-  }
+  if (Math.random() < stutterChance(p)) return;
+  applyMainEffects(ctx, video, p, W, H);
+}
 
-  // 1) Pixelate: draw video into tiny offscreen canvas.
-  const { w: targetW, h: targetH } = pixelTarget(p, W, H);
+// Run the full effects pipeline against `source` and write the result into
+// `destCtx`, sized destW × destH. Used by both the main canvas and each
+// preset preview, so behaviour stays in lockstep with no duplicated math.
+function applyMainEffects(destCtx, source, p, destW, destH) {
+  // Keep the chunky-pixel feel proportional regardless of canvas size.
+  const minW = Math.max(1, Math.round(28 * destW / W));
+
+  // 1) Pixelate: draw source into tiny offscreen canvas.
+  const { w: targetW, h: targetH } = pixelTarget(p, destW, destH, minW);
   effectsCanvas.width = targetW;
   effectsCanvas.height = targetH;
   effectsCtx.imageSmoothingEnabled = true;
   effectsCtx.imageSmoothingQuality = 'low';
-  effectsCtx.drawImage(video, 0, 0, targetW, targetH);
+  effectsCtx.drawImage(source, 0, 0, targetW, targetH);
 
   // 2) Color quantization on the small canvas (cheap).
   const quant = quantizationStep(p);
@@ -205,47 +226,57 @@ function render(now) {
   }
 
   // 3) Scale up to display, no smoothing → blocky.
-  ctx.imageSmoothingEnabled = false;
-  ctx.clearRect(0, 0, W, H);
-  ctx.drawImage(effectsCanvas, 0, 0, W, H);
+  destCtx.imageSmoothingEnabled = false;
+  destCtx.clearRect(0, 0, destW, destH);
+  destCtx.drawImage(effectsCanvas, 0, 0, destW, destH);
 
   // 4) Chromatic ghosting (poor man's RGB shift). Two offset copies blended in.
+  // Scale the offset so the look matches the main canvas at any size.
   const chroma = chromaticParams(p);
   if (chroma) {
-    ctx.globalCompositeOperation = 'screen';
-    ctx.globalAlpha = chroma.alpha;
-    ctx.drawImage(effectsCanvas, -chroma.offset, 0, W, H);
-    ctx.drawImage(effectsCanvas,  chroma.offset, 0, W, H);
-    ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = 'source-over';
+    const off = Math.max(1, Math.round(chroma.offset * destW / W));
+    destCtx.globalCompositeOperation = 'screen';
+    destCtx.globalAlpha = chroma.alpha;
+    destCtx.drawImage(effectsCanvas, -off, 0, destW, destH);
+    destCtx.drawImage(effectsCanvas,  off, 0, destW, destH);
+    destCtx.globalAlpha = 1;
+    destCtx.globalCompositeOperation = 'source-over';
   }
 
   // 5) Scanlines.
   const sa = scanlineAlpha(p);
   if (sa !== null) {
-    ctx.globalAlpha = sa;
-    ctx.drawImage(scanlineCanvas, 0, 0);
-    ctx.globalAlpha = 1;
+    destCtx.globalAlpha = sa;
+    destCtx.drawImage(scanlineCanvas, 0, 0, destW, destH);
+    destCtx.globalAlpha = 1;
   }
 
   // 6) Vignette.
   const va = vignetteAlpha(p);
   if (va !== null) {
-    ctx.globalAlpha = va;
-    ctx.drawImage(vignetteCanvas, 0, 0);
-    ctx.globalAlpha = 1;
+    destCtx.globalAlpha = va;
+    destCtx.drawImage(vignetteCanvas, 0, 0, destW, destH);
+    destCtx.globalAlpha = 1;
   }
 
   // 7) Color cast — sickly green at extreme potato levels.
   const tint = greenTint(p);
   if (tint !== null) {
-    ctx.globalCompositeOperation = 'multiply';
-    ctx.fillStyle = `rgba(${Math.round(255*tint)}, 255, ${Math.round(255*tint)}, 1)`;
-    ctx.fillRect(0, 0, W, H);
-    ctx.globalCompositeOperation = 'source-over';
+    destCtx.globalCompositeOperation = 'multiply';
+    destCtx.fillStyle = `rgba(${Math.round(255*tint)}, 255, ${Math.round(255*tint)}, 1)`;
+    destCtx.fillRect(0, 0, destW, destH);
+    destCtx.globalCompositeOperation = 'source-over';
   }
+}
 
-  requestAnimationFrame(render);
+// Throttled to ~10 fps — the strip is informational, not the focus.
+function renderPreviews(now) {
+  if (!previews.length) return;
+  if (now - lastPreviewAt < 100) return;
+  lastPreviewAt = now;
+  for (const p of previews) {
+    applyMainEffects(p.ctx, video, p.level, p.canvas.width, p.canvas.height);
+  }
 }
 
 function buildEmojiTiles() {
