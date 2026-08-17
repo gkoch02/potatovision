@@ -335,6 +335,131 @@
       }
     }
 
+    group('camera lifecycle: hide during pending getUserMedia acquisition');
+    {
+      const origGUM  = navigator.mediaDevices && navigator.mediaDevices.getUserMedia;
+      const origPlay = HTMLVideoElement.prototype.play;
+      const origRAF  = window.requestAnimationFrame;
+      const origSrcObjectDesc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'srcObject');
+      if (!navigator.mediaDevices) {
+        Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: {} });
+      }
+
+      let stopCount = 0;
+      const mockTrack = { kind: 'video', stop() { stopCount++; } };
+      const mockStream = { getTracks: () => [mockTrack] };
+
+      let resolveGUM;
+      navigator.mediaDevices.getUserMedia = () => new Promise((r) => { resolveGUM = r; });
+      HTMLVideoElement.prototype.play = function () { return Promise.resolve(); };
+      Object.defineProperty(HTMLMediaElement.prototype, 'srcObject', {
+        configurable: true,
+        get() { return this._stubSrcObject ?? null; },
+        set(v) { this._stubSrcObject = v; },
+      });
+      window.requestAnimationFrame = () => 0;
+
+      const startBtn = document.getElementById('start');
+      let restoreHidden = null;
+      try {
+        startBtn.click();
+        await flush();
+        eq('start button disabled while acquisition pending', startBtn.disabled, true);
+
+        // Hide the tab while getUserMedia() is still pending — `stream` is
+        // still null here, so the visibilitychange handler has nothing to
+        // stop yet. This is the race from issue #9.
+        restoreHidden = patchHidden(true);
+        document.dispatchEvent(new Event('visibilitychange'));
+        await flush();
+
+        // Now the pending permission grant resolves.
+        resolveGUM(mockStream);
+        await flush();
+        await flush();
+
+        eq('acquired track.stop() called', stopCount, 1);
+        eq('camera did not enter running state', startBtn.textContent, 'Start camera');
+        eq('start button re-enabled', startBtn.disabled, false);
+      } finally {
+        if (restoreHidden) restoreHidden();
+        window.requestAnimationFrame = origRAF;
+        HTMLVideoElement.prototype.play = origPlay;
+        if (origSrcObjectDesc) {
+          Object.defineProperty(HTMLMediaElement.prototype, 'srcObject', origSrcObjectDesc);
+        } else {
+          delete HTMLMediaElement.prototype.srcObject;
+        }
+        if (origGUM) navigator.mediaDevices.getUserMedia = origGUM;
+      }
+    }
+
+    group('camera lifecycle: video.play() rejection cleans up and allows retry');
+    {
+      const origGUM  = navigator.mediaDevices && navigator.mediaDevices.getUserMedia;
+      const origPlay = HTMLVideoElement.prototype.play;
+      const origRAF  = window.requestAnimationFrame;
+      const origSrcObjectDesc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'srcObject');
+      if (!navigator.mediaDevices) {
+        Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: {} });
+      }
+
+      let stopCount = 0;
+      let gumCalls  = 0;
+      const mockTrack  = { kind: 'video', stop() { stopCount++; } };
+      const mockStream = { getTracks: () => [mockTrack] };
+
+      navigator.mediaDevices.getUserMedia = async () => { gumCalls++; return mockStream; };
+      HTMLVideoElement.prototype.play = function () { return Promise.reject(new Error('play() failed')); };
+      Object.defineProperty(HTMLMediaElement.prototype, 'srcObject', {
+        configurable: true,
+        get() { return this._stubSrcObject ?? null; },
+        set(v) { this._stubSrcObject = v; },
+      });
+      window.requestAnimationFrame = () => 0;
+
+      const startBtn = document.getElementById('start');
+      let restoreHidden = null;
+      try {
+        startBtn.click();
+        await flush();
+        await flush();
+
+        eq('getUserMedia called once', gumCalls, 1);
+        eq('acquired track.stop() called after play() rejection', stopCount, 1);
+        eq('start button re-enabled for retry', startBtn.disabled, false);
+        eq('start button text reset', startBtn.textContent, 'Start camera');
+        const srcObj = document.getElementById('video').srcObject;
+        eq('video.srcObject cleared', srcObj, null);
+
+        // Second click should attempt a fresh acquisition — proves `stream`
+        // was reset to null, not left stuck non-null from the failed attempt.
+        HTMLVideoElement.prototype.play = function () { return Promise.resolve(); };
+        startBtn.click();
+        await flush();
+        await flush();
+        eq('getUserMedia called again on retry', gumCalls, 2);
+        eq('second attempt starts the camera', startBtn.textContent, 'Camera on');
+
+        // Clean up: leave the module's `stream` reset to null so later test
+        // groups (which start their own stubbed camera) aren't blocked by
+        // the `if (stream) return;` guard at the top of startCamera().
+        restoreHidden = patchHidden(true);
+        document.dispatchEvent(new Event('visibilitychange'));
+        await flush();
+      } finally {
+        if (restoreHidden) restoreHidden();
+        window.requestAnimationFrame = origRAF;
+        HTMLVideoElement.prototype.play = origPlay;
+        if (origSrcObjectDesc) {
+          Object.defineProperty(HTMLMediaElement.prototype, 'srcObject', origSrcObjectDesc);
+        } else {
+          delete HTMLMediaElement.prototype.srcObject;
+        }
+        if (origGUM) navigator.mediaDevices.getUserMedia = origGUM;
+      }
+    }
+
     group('snap(): Pristine skips JPEG, JPEG path runs above threshold');
     {
       const mockTrack = { kind: 'video', stop() {} };

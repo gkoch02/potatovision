@@ -145,11 +145,32 @@ async function startCamera() {
   }
   startBtn.disabled = true;
   setStatus('Requesting camera…');
+
+  let acquired;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
+    acquired = await navigator.mediaDevices.getUserMedia({
       video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
       audio: false,
     });
+  } catch (e) {
+    console.error(e);
+    startBtn.disabled = false;
+    setStatus(`Couldn't open camera: ${e.name === 'NotAllowedError' ? 'permission denied.' : e.message}`);
+    return;
+  }
+
+  // The tab may have been hidden while permission/acquisition was pending —
+  // `stream` was still null then, so the visibilitychange handler had nothing
+  // to stop. Don't start capturing behind the user's back; discard the grant.
+  if (document.hidden) {
+    acquired.getTracks().forEach((t) => t.stop());
+    startBtn.disabled = false;
+    setStatus('Camera paused (tab hidden). Click Start to resume.');
+    return;
+  }
+
+  stream = acquired;
+  try {
     video.srcObject = stream;
     await video.play();
     running = true;
@@ -158,7 +179,12 @@ async function startCamera() {
     requestAnimationFrame(render);
   } catch (e) {
     console.error(e);
+    stream.getTracks().forEach((t) => t.stop());
+    stream = null;
+    video.srcObject = null;
+    running = false;
     startBtn.disabled = false;
+    startBtn.textContent = 'Start camera';
     setStatus(`Couldn't open camera: ${e.name === 'NotAllowedError' ? 'permission denied.' : e.message}`);
   }
 }
