@@ -36,6 +36,7 @@ const vignetteCanvas = buildVignette();
 
 let stream = null;
 let running = false;
+let startAttempt = 0;
 let level = 0;            // 0..1
 let emojiMode = false;
 let lastEmojiAt = 0;
@@ -146,6 +147,14 @@ async function startCamera() {
   startBtn.disabled = true;
   setStatus('Requesting camera…');
 
+  // Tags this call so it can tell, after any await, whether a later
+  // startCamera() call (e.g. a hide-then-retry while this one's getUserMedia
+  // or play() is still pending) has already taken over. Cleanup for a
+  // superseded attempt must only ever touch its own `acquired` stream, never
+  // the shared `stream`/`video.srcObject`/`running` globals — those may
+  // belong to the newer attempt by the time this one's promise settles.
+  const attempt = ++startAttempt;
+
   let acquired;
   try {
     acquired = await navigator.mediaDevices.getUserMedia({
@@ -154,6 +163,7 @@ async function startCamera() {
     });
   } catch (e) {
     console.error(e);
+    if (attempt !== startAttempt) return;
     startBtn.disabled = false;
     setStatus(`Couldn't open camera: ${e.name === 'NotAllowedError' ? 'permission denied.' : e.message}`);
     return;
@@ -164,22 +174,38 @@ async function startCamera() {
   // to stop. Don't start capturing behind the user's back; discard the grant.
   if (document.hidden) {
     acquired.getTracks().forEach((t) => t.stop());
-    startBtn.disabled = false;
-    setStatus('Camera paused (tab hidden). Click Start to resume.');
+    if (attempt === startAttempt) {
+      startBtn.disabled = false;
+      setStatus('Camera paused (tab hidden). Click Start to resume.');
+    }
+    return;
+  }
+
+  if (attempt !== startAttempt) {
+    // A newer attempt started (and possibly already finished) while this one
+    // was awaiting getUserMedia(). Release this grant; don't touch state.
+    acquired.getTracks().forEach((t) => t.stop());
     return;
   }
 
   stream = acquired;
   try {
-    video.srcObject = stream;
+    video.srcObject = acquired;
     await video.play();
+    if (attempt !== startAttempt) {
+      // Superseded while play() was pending — the newer attempt owns
+      // `stream`/`video.srcObject`/`running` now. Just release our tracks.
+      acquired.getTracks().forEach((t) => t.stop());
+      return;
+    }
     running = true;
     setStatus('');
     startBtn.textContent = 'Camera on';
     requestAnimationFrame(render);
   } catch (e) {
     console.error(e);
-    stream.getTracks().forEach((t) => t.stop());
+    acquired.getTracks().forEach((t) => t.stop());
+    if (attempt !== startAttempt) return;
     stream = null;
     video.srcObject = null;
     running = false;

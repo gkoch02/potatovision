@@ -460,6 +460,104 @@
       }
     }
 
+    group('camera lifecycle: a stale start attempt cannot clobber a newer one');
+    {
+      // Regression test for a race a reviewer found in the two fixes above:
+      // hide the tab while attempt 1's video.play() is still pending (so
+      // visibilitychange resets state and the button becomes retryable),
+      // start attempt 2 which succeeds, then let attempt 1's play() reject
+      // late. Attempt 1's catch must not touch attempt 2's stream/video/UI.
+      const origGUM  = navigator.mediaDevices && navigator.mediaDevices.getUserMedia;
+      const origPlay = HTMLVideoElement.prototype.play;
+      const origRAF  = window.requestAnimationFrame;
+      const origSrcObjectDesc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'srcObject');
+      if (!navigator.mediaDevices) {
+        Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: {} });
+      }
+
+      let stopCountA = 0;
+      let stopCountB = 0;
+      const mockTrackA  = { kind: 'video', stop() { stopCountA++; } };
+      const mockTrackB  = { kind: 'video', stop() { stopCountB++; } };
+      const mockStreamA = { getTracks: () => [mockTrackA] };
+      const mockStreamB = { getTracks: () => [mockTrackB] };
+
+      let gumCalls = 0;
+      navigator.mediaDevices.getUserMedia = async () => {
+        gumCalls++;
+        return gumCalls === 1 ? mockStreamA : mockStreamB;
+      };
+
+      let playCalls = 0;
+      let rejectFirstPlay;
+      HTMLVideoElement.prototype.play = function () {
+        playCalls++;
+        if (playCalls === 1) return new Promise((_, reject) => { rejectFirstPlay = reject; });
+        return Promise.resolve();
+      };
+      Object.defineProperty(HTMLMediaElement.prototype, 'srcObject', {
+        configurable: true,
+        get() { return this._stubSrcObject ?? null; },
+        set(v) { this._stubSrcObject = v; },
+      });
+      window.requestAnimationFrame = () => 0;
+
+      const startBtn = document.getElementById('start');
+      const video = document.getElementById('video');
+      let restoreHidden = null;
+      try {
+        // Attempt 1: acquires A, video.play() left pending.
+        startBtn.click();
+        await flush();
+        await flush();
+
+        // Hide the tab while attempt 1's play() is still pending.
+        restoreHidden = patchHidden(true);
+        document.dispatchEvent(new Event('visibilitychange'));
+        await flush();
+        restoreHidden();
+        restoreHidden = null;
+        eq('A stopped by visibilitychange', stopCountA, 1);
+        eq('button retryable after hide', startBtn.disabled, false);
+
+        // Attempt 2: acquires B, play() resolves — this is now "current".
+        startBtn.click();
+        await flush();
+        await flush();
+        eq('attempt 2 started the camera', startBtn.textContent, 'Camera on');
+        if (video.srcObject === mockStreamB) pass('video.srcObject is B after attempt 2');
+        else fail('video.srcObject is B after attempt 2', 'got a different object');
+
+        // The stale attempt 1's play() finally rejects. Its catch must not
+        // touch attempt 2's state.
+        rejectFirstPlay(new Error('stale play() rejection'));
+        await flush();
+        await flush();
+
+        eq('attempt 2 still shows running after the stale rejection', startBtn.textContent, 'Camera on');
+        eq('start button still disabled (still running, not reset by stale attempt)', startBtn.disabled, true);
+        if (video.srcObject === mockStreamB) pass('video.srcObject still B (not cleared by stale attempt)');
+        else fail('video.srcObject still B (not cleared by stale attempt)', 'got ' + JSON.stringify(video.srcObject));
+        eq('B tracks were not stopped by the stale attempt', stopCountB, 0);
+      } finally {
+        if (restoreHidden) restoreHidden();
+        // Reset module state for later groups.
+        const resetHidden = patchHidden(true);
+        document.dispatchEvent(new Event('visibilitychange'));
+        await flush();
+        resetHidden();
+
+        window.requestAnimationFrame = origRAF;
+        HTMLVideoElement.prototype.play = origPlay;
+        if (origSrcObjectDesc) {
+          Object.defineProperty(HTMLMediaElement.prototype, 'srcObject', origSrcObjectDesc);
+        } else {
+          delete HTMLMediaElement.prototype.srcObject;
+        }
+        if (origGUM) navigator.mediaDevices.getUserMedia = origGUM;
+      }
+    }
+
     group('snap(): Pristine skips JPEG, JPEG path runs above threshold');
     {
       const mockTrack = { kind: 'video', stop() {} };
