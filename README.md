@@ -1,5 +1,7 @@
 # PotatoVision 🥔📷
 
+[![CodeQL](https://github.com/gkoch02/potatovision/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/gkoch02/potatovision/actions/workflows/github-code-scanning/codeql)
+
 ![PotatoVision](title.svg)
 
 > Filmed on a potato. By choice.
