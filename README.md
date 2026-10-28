@@ -1,10 +1,14 @@
-# PotatoVision 🥔📷
+# PotatoVision
 
 [![CodeQL](https://github.com/gkoch02/potatovision/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/gkoch02/potatovision/actions/workflows/github-code-scanning/codeql)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
+A single-page web app that turns your webcam feed into the worst possible
+video on demand. Drag the **Potato Level** slider from 0 to 100 and watch
+yourself disintegrate into pixelated, color-quantized, chromatically-bleeding,
+scanlined, sickly-green found-footage glory. Filmed on a potato, by choice.
 
 ![PotatoVision](title.svg)
-
-> Filmed on a potato. By choice.
 
 <p align="center">
   <img src="preview-strip.png" alt="Preview strip showing all five presets — Pristine, Zoom 2020, Skype 2008, Found Footage, Actual Potato — applied to the same photo" />
@@ -15,16 +19,9 @@
   <a href="https://creativecommons.org/licenses/by/2.0/">CC BY 2.0</a>.</i></sub>
 </p>
 
-A tiny, dependency-free web app that turns your webcam feed into the worst
-possible video on demand. Drag the **Potato Level** slider from 0 to 100 and
-watch your beautiful HD self disintegrate into pixelated, color-quantized,
-chromatically-bleeding, scanlined, sickly-green found-footage glory.
-
-Bonus: **🥔 Emoji Mode** renders the feed as a live grid of potato emojis.
-
 ## Run it
 
-It's a static page. Two options:
+It is a static page, so either open the file or serve the folder:
 
 ```bash
 # Option A — open the file directly
@@ -37,23 +34,22 @@ python3 -m http.server 8000
 ```
 
 Click **Start camera**, accept the permission prompt, and start ruining your
-own face.
+own face. It works in Chromium, Chrome, Edge and Firefox; Safari needs HTTPS
+or `localhost` for `getUserMedia`.
 
-## Features
+## What it does
 
-- **Single slider** drives a multi-stage degradation pipeline:
-  - resolution drop (down to 28×21 pixels)
-  - per-channel color quantization (8 → 1 bits)
-  - chromatic ghosting / RGB ghost
-  - CRT scanlines
-  - radial vignette
-  - sickly-green color cast at maximum potato
-  - frame stutter — at high levels, frames spontaneously hold to fake bandwidth starvation
-- **Presets** — *Pristine*, *Zoom 2020*, *Skype 2008*, *Found Footage*, *Actual Potato*
-- **📸 Snap** — downloads the current frame as a `potatovision-<timestamp>.png`,
-  re-encoded through a punishing JPEG pass, with a red `● REC` and a date stamp
-  for that early-2000s camcorder vibe
-- **🥔 Emoji Mode** — replaces the canvas with a live, animated 🥔/🍟/🟧/🟫/⬛ grid
+The one slider drives a degradation pipeline: a resolution drop (down to
+28×21 pixels), per-channel color quantization (8 bits down to 1), chromatic
+ghosting, CRT scanlines, a radial vignette, a sickly-green cast at maximum
+potato, and frame stutter, where at high levels frames spontaneously hold to
+fake bandwidth starvation. Five presets (*Pristine*, *Zoom 2020*, *Skype
+2008*, *Found Footage*, *Actual Potato*) set the slider for you.
+
+**Snap** downloads the current frame as `potatovision-<timestamp>.png`,
+re-encoded through a punishing JPEG pass, with a red `● REC` and a date stamp
+for that early-2000s camcorder look. **Emoji Mode** replaces the canvas with a
+live, animated 🥔/🍟/🟧/🟫/⬛ grid.
 
 ## Use it as your Zoom camera
 
@@ -72,50 +68,36 @@ Windows, and Linux:
 5. In Zoom (or Meet, Teams, Discord, etc.), pick **OBS Virtual Camera** as
    your camera.
 
-PotatoVision and OBS both stay fully local — the page renders in your
-browser and OBS reads that canvas off your machine to expose a virtual
-camera device. Once you select **OBS Virtual Camera** inside Zoom/Meet/
-Teams, though, the conferencing app transmits that video to the call like
-any other webcam feed. The "no frames leave your machine" promise covers
-PotatoVision itself, not whatever app you point at the virtual camera.
+PotatoVision and OBS both stay local — the page renders in your browser and
+OBS reads that canvas off your machine to expose a virtual camera device.
+Once you select **OBS Virtual Camera** inside Zoom/Meet/Teams, though, the
+conferencing app transmits that video to the call like any other webcam feed.
+The privacy note below covers PotatoVision itself, not whatever app you point
+at the virtual camera.
 
 ## Privacy
 
-No frames leave your machine. There is no backend. Closing the tab pauses the
-camera. So does switching to another tab — and `tests.html` asserts this.
-The code is plain JS in `potatovision.js` — read it.
-
-## Browser support
-
-- ✅ Chromium / Chrome / Edge
-- ✅ Firefox
-- ⚠️ Safari — `getUserMedia` requires HTTPS or `localhost`
-- ❌ IE — sorry, the potato is too modern
+Every frame stays in your browser; there is nothing for it to be sent to.
+Closing the tab pauses the camera, and so does switching to another tab,
+which `tests.html` asserts. The code is plain JS in `potatovision.js`.
 
 ## Tests
 
 There's no test runner — open `tests.html` in a browser the same way you run
-the app. It imports `potatovision.js` against stub DOM elements and runs ~60
-assertions covering the per-stage effect math, the `index.html` DOM contract,
-the snapshot path, and the camera-paused-when-tab-hidden privacy promise.
-Pass/fail counts at the top.
+the app. It imports `potatovision.js` against stub DOM elements and runs an
+assertion harness covering the per-stage effect math, the `index.html` DOM
+contract, the snapshot path, and the camera-paused-when-tab-hidden privacy
+promise. Pass/fail counts at the top.
 
 ## Files
 
-```
-potatovision/
-├── index.html               # markup
-├── styles.css               # retro-CRT theme
-├── potatovision.js          # all runtime logic
-├── tests.html               # in-browser assertion harness
-├── title.svg                # README banner
-├── preview-strip.png        # README preview strip (all 5 presets, real filter)
-├── CLAUDE.md                # contributor / agent guide
-└── README.md
-```
-
-No build step, no `package.json`, no framework. Just the web platform.
+`index.html` is the markup, `styles.css` the retro-CRT theme,
+`potatovision.js` all of the runtime logic and `tests.html` the in-browser
+assertion harness. `title.svg` and `preview-strip.png` (all five presets, through
+the real filter) are the README's images, and `CLAUDE.md` is the contributor
+and agent guide. There is no build step, package manifest or framework.
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE). The preview strip's source photograph is CC BY
+2.0, credited above.
