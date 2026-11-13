@@ -91,6 +91,8 @@ promise. Pass/fail counts at the top.
 
 ## Files
 
+[`docs/CODE_TOUR.md`](docs/CODE_TOUR.md) walks through how one webcam frame becomes a potato, for anyone new to the code.
+
 `index.html` is the markup, `styles.css` the retro-CRT theme,
 `potatovision.js` all of the runtime logic and `tests.html` the in-browser
 assertion harness. `title.svg` and `preview-strip.png` (all five presets, through
