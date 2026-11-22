@@ -1,7 +1,5 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 ## What this project is
 
 PotatoVision is a single-page browser app that runs the user's webcam through a
@@ -10,6 +8,8 @@ ghosting, scanlines, vignette, frame stutter, sickly-green tint), all driven by
 one **Potato Level** slider (0–100). It also has a 🥔 Emoji Mode that renders
 the feed as a grid of emojis, and a 📸 Snap button that downloads the current
 frame as a (deliberately-crunched) PNG.
+
+`docs/CODE_TOUR.md` walks through the code and names functions; update it when you rename or move one.
 
 ## Run / develop
 
@@ -33,12 +33,12 @@ constraint — the README and footer make this promise to users.
 
 Open `tests.html` in a browser (same way you run the app). It's a
 zero-dependency, in-page assertion harness — no runner, no `package.json`. The
-script imports `potatovision.js`, then exercises three areas:
+page loads `potatovision.js`, then exercises three areas:
 
 1. **Pure effect math** via `window.PV` (exposed by `potatovision.js` for
    tests; production code does not read it). Covers `clamp`/`lerp`/`easeIn`,
    `pixelTarget`, `quantizationStep`, `chromaticParams`,
-   `scanline`/`vignetteAlpha`, `greenTint`, `stutterChance`, `jpegQuality`,
+   `scanlineAlpha`/`vignetteAlpha`, `greenTint`, `stutterChance`, `jpegQuality`,
    `emojiBucket`, plus the per-stage engagement thresholds (regression guard
    against someone bumping `p > 0.25` to `p > 0.5`, etc.).
 2. **`index.html` DOM contract** — `fetch`es `index.html` and asserts every ID
@@ -68,11 +68,10 @@ Three files do all the runtime work:
 
 - `index.html` — markup, two visible canvases inside a `.viewport`, the
   slider/buttons. `potatovision.js` is loaded as a classic deferred script
-  (not a module) so the page works when opened directly over `file://` —
-  Safari refuses to load ES modules from `file://` origins, which is why
-  `tests.html` (which imports the file as a module) only works over
-  `http://localhost`. Don't add `import`/`export` to `potatovision.js`
-  without also fixing the loading strategy.
+  (not a module) so the page works when opened directly over `file://`:
+  Safari refuses to load ES modules from `file://` origins. `tests.html` loads
+  it as a classic script for the same reason. Don't add `import`/`export` to
+  `potatovision.js` without also changing how both pages load it.
 - `styles.css` — retro-CRT theme. Two load-bearing rules:
   - `image-rendering: pixelated` on `#canvas, #emojiCanvas` preserves the
     chunky look when the 480×360 internal canvas is CSS-scaled up.
@@ -82,7 +81,7 @@ Three files do all the runtime work:
     `display:none` / class-based hiding without updating this selector.
 - `potatovision.js` — everything else.
 
-`tests.html` is a fourth file used only for testing — it imports
+`tests.html` is a fourth file used only for testing — it loads
 `potatovision.js` against stub DOM elements and runs assertions in-page. It is
 not loaded by `index.html` and adds zero runtime cost.
 
