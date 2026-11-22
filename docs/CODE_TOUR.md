@@ -104,7 +104,7 @@ The first line is what went wrong; the `at` lines below say where (file, line, c
 | `… is not defined` / `… is not a function` | A misspelled name |
 | `NotAllowedError` (camera) | Camera permission was refused; allow it in the browser's site settings |
 | `NotFoundError` (camera) | No camera, or another app has it |
-| The page works from a file but `tests.html` doesn't | `tests.html` loads the script as a module, which browsers allow only over `http://`: serve the folder |
+| `tests.html` skips the DOM-contract checks | Opened from a file, its `fetch` of `index.html` can't run: serve the folder over `http://localhost` |
 
 ## Making a change
 
